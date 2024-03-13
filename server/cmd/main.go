@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"math"
@@ -9,6 +10,7 @@ import (
 	"server/types"
 	"sort"
 	"strings"
+	"sync"
 	// "app/async"
 )
 
@@ -18,48 +20,100 @@ func main() {
 	mux.HandleFunc("/api/get-listings", handleApiRequest)
 	http.ListenAndServe(":8080", mux)
 }
-
 func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 
-	responseData, err := createCoinMarketCapRequest(w, r, client)
+	wg := sync.WaitGroup{}
 
-	nameToCheckInOtherApi := responseData.Data[0].Name
+	responseDataCh := make(chan types.Response)
+	responseData2Ch := make(chan []types.Coin)
+	priceOfCoinOtherApiCh := make(chan float64)
+	errCh := make(chan error, 3) // Buffered channel for error communication
 
-	responseData2, err := createCoinGeckoRequest(w, client)
+	wg.Add(3)
 
-	nameToCheckInOtherApi = findCoinID(responseData2, nameToCheckInOtherApi)
+	// Concurrently fetch data from CoinMarketCap API
+	go func() {
+		defer wg.Done()
+		responseData, err := createCoinMarketCapRequest(w, r, client)
+		if err != nil {
+			errCh <- err // Send error to the channel
+			return
+		}
+		responseDataCh <- responseData
+	}()
 
-	priceOfCoinOtherApi := createCoinGeckoPriceRequest(w, nameToCheckInOtherApi, client)
+	// Concurrently fetch data from CoinGecko API
+	go func() {
+		defer wg.Done()
+		responseData2, err := createCoinGeckoRequest(w, client)
+		if err != nil {
+			errCh <- err // Send error to the channel
+			return
+		}
+		responseData2Ch <- responseData2
+	}()
 
-	average := CalculateAverage(responseData)
-	median := CalculateMedian(responseData)
-	standardDeviation := CalculateStandardDeviation(responseData)
+	// Concurrently fetch price from CoinGecko API
+	go func() {
+		defer wg.Done()
+		responseData := <-responseDataCh
+		responseData2 := <-responseData2Ch
+		nameToCheckInOtherApi := responseData.Data[0].Name
+		coinID := findCoinID(responseData2, nameToCheckInOtherApi)
+		price, err := createCoinGeckoPriceRequest(w, coinID, client)
+		if err != nil {
+			errCh <- err // Send error to the channel
+			return
+		}
+		priceOfCoinOtherApiCh <- price
+	}()
 
-	tmpl := template.Must(template.ParseFiles("html/results.html"))
+	go func() {
+		// Wait for all goroutines to finish
+		wg.Wait()
 
-	templateData := types.ResponseToHttp{
-		Response:            responseData,
-		Average:             average,
-		Median:              median,
-		StandardDeviation:   standardDeviation,
-		Max:                 CalculateMax(responseData),
-		Min:                 CalculateMin(responseData),
-		PriceOfCoinOtherApi: priceOfCoinOtherApi,
-	}
+		select {
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		default:
+			responseData := <-responseDataCh
+			priceOfCoinOtherApi := <-priceOfCoinOtherApiCh
 
-	err = tmpl.Execute(w, templateData)
+			average := CalculateAverage(responseData)
+			median := CalculateMedian(responseData)
+			standardDeviation := CalculateStandardDeviation(responseData)
 
-	if err != nil {
-		log.Println("Error executing template:", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
+			tmpl := template.Must(template.ParseFiles("html/results.html"))
+
+			templateData := types.ResponseToHttp{
+				Response:            responseData,
+				Average:             average,
+				Median:              median,
+				StandardDeviation:   standardDeviation,
+				Max:                 CalculateMax(responseData),
+				Min:                 CalculateMin(responseData),
+				PriceOfCoinOtherApi: priceOfCoinOtherApi,
+			}
+
+			err := tmpl.Execute(w, templateData)
+			if err != nil {
+				log.Println("Error executing template:", err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+		}
+	}()
 }
 
 func createCoinMarketCapRequest(w http.ResponseWriter, r *http.Request, client *http.Client) (types.Response, error) {
+	fmt.Println(r)
+	apiKey := r.FormValue("api")
 	limit := r.FormValue("limit")
 	order := r.FormValue("order")
+
+	fmt.Println("data:", apiKey, limit, order)
 
 	req, err := http.NewRequest("GET", "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest", nil)
 	if err != nil {
@@ -73,12 +127,6 @@ func createCoinMarketCapRequest(w http.ResponseWriter, r *http.Request, client *
 
 	req.Header.Set("Accepts", "application/json")
 	req.Header.Add("X-CMC_PRO_API_KEY", "713a6b7d-6e93-4d59-88ea-038f57de2ae6")
-
-	if err != nil {
-		log.Print(err)
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return types.Response{}, err
-	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -137,12 +185,12 @@ func createCoinGeckoRequest(w http.ResponseWriter, client *http.Client) ([]types
 	return responseData2, nil
 }
 
-func createCoinGeckoPriceRequest(w http.ResponseWriter, coinID string, client *http.Client) float64 {
+func createCoinGeckoPriceRequest(w http.ResponseWriter, coinID string, client *http.Client) (float64, error) {
 	req3, err := http.NewRequest("GET", "https://api.coingecko.com/api/v3/simple/price?ids="+coinID+"&vs_currencies=usd", nil)
 	if err != nil {
 		log.Print(err)
 		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return 0
+		return 0, err
 	}
 
 	req3.Header.Add("x-cg-demo-api-key", "CG-x46kYuMHifPvVb46Qxj8WnRs")
@@ -151,24 +199,24 @@ func createCoinGeckoPriceRequest(w http.ResponseWriter, coinID string, client *h
 	if err != nil {
 		log.Print(err)
 		http.Error(w, "Error sending request to server", http.StatusInternalServerError)
-		return 0
+		return 0, err
 	}
 	defer resp3.Body.Close()
 
 	if resp3.StatusCode != http.StatusOK {
 		log.Printf("Received non-OK status code 3: %d", resp3.StatusCode)
 		http.Error(w, "Recieved status code 3:", resp3.StatusCode)
-		return 0
+		return 0, err
 	}
 
 	var responseData3 map[string]map[string]float64
 	if err := json.NewDecoder(resp3.Body).Decode(&responseData3); err != nil {
 		log.Print("Error decoding JSON response: ", err)
 		http.Error(w, "Error decoding JSON response", http.StatusInternalServerError)
-		return 0
+		return 0, err
 	}
 
-	return responseData3[coinID]["usd"]
+	return responseData3[coinID]["usd"], nil
 }
 
 func findCoinID(coins []types.Coin, nameToCheckInOtherApi string) string {
@@ -242,8 +290,4 @@ func homeHandler(rw http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func handleAuthRequest(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Auth request received"))
 }
