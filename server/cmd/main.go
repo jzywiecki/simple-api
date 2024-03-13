@@ -22,15 +22,52 @@ func main() {
 func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 
-	responseData, err := createCoinMarketCapRequest(w, r, client)
+	if r.FormValue("api-key") != "123" {
+		http.Error(w, "Invalid API key", http.StatusUnauthorized)
+		return
+	}
 
-	nameToCheckInOtherApi := responseData.Data[0].Name
+	responseDataCh := make(chan types.Response)
+	responseDataCh2 := make(chan []types.Coin)
+	priceOfCoinOtherApiCh := make(chan float64)
+	errorCh := make(chan error)
 
-	responseData2, err := createCoinGeckoRequest(w, client)
+	go func() {
+		responseData, err := createCoinMarketCapRequest(w, r, client)
 
-	nameToCheckInOtherApi = findCoinID(responseData2, nameToCheckInOtherApi)
+		if err != nil {
+			errorCh <- err
+		} else {
+			responseDataCh <- responseData
+			responseDataCh <- responseData
+		}
+	}()
 
-	priceOfCoinOtherApi := createCoinGeckoPriceRequest(w, nameToCheckInOtherApi, client)
+	go func() {
+		responseData2, err := createCoinGeckoRequest(w, client)
+
+		if err != nil {
+			errorCh <- err
+		} else {
+			responseDataCh2 <- responseData2
+		}
+	}()
+
+	go func() {
+		responseData := <-responseDataCh
+		responseData2 := <-responseDataCh2
+
+		nameToCheckInOtherApi := responseData.Data[0].Name
+
+		nameToCheckInOtherApi = findCoinID(responseData2, nameToCheckInOtherApi)
+
+		priceOfCoinOtherApi := createCoinGeckoPriceRequest(w, nameToCheckInOtherApi, client)
+
+		priceOfCoinOtherApiCh <- priceOfCoinOtherApi
+	}()
+
+	priceOfCoinOtherApi := <-priceOfCoinOtherApiCh
+	responseData := <-responseDataCh
 
 	average := CalculateAverage(responseData)
 	median := CalculateMedian(responseData)
@@ -48,13 +85,14 @@ func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 		PriceOfCoinOtherApi: priceOfCoinOtherApi,
 	}
 
-	err = tmpl.Execute(w, templateData)
+	err := tmpl.Execute(w, templateData)
 
 	if err != nil {
 		log.Println("Error executing template:", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+
 }
 
 func createCoinMarketCapRequest(w http.ResponseWriter, r *http.Request, client *http.Client) (types.Response, error) {
@@ -73,12 +111,6 @@ func createCoinMarketCapRequest(w http.ResponseWriter, r *http.Request, client *
 
 	req.Header.Set("Accepts", "application/json")
 	req.Header.Add("X-CMC_PRO_API_KEY", "713a6b7d-6e93-4d59-88ea-038f57de2ae6")
-
-	if err != nil {
-		log.Print(err)
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return types.Response{}, err
-	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -242,8 +274,4 @@ func homeHandler(rw http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func handleAuthRequest(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Auth request received"))
 }
