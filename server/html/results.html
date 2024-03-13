@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="style.css">
+        <title>Cryptocurrency!</title>
+    </head>
+<body>
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <h1>Welcome to cryptosummary</h1>
+        <div id="results">
+            <ul style="list-style-type: none;">
+                {{range .Response.Data}}
+                <li>
+                    <strong>Name:</strong> {{.Name}}, 
+                    <strong>Symbol:</strong> {{.Symbol}}, 
+                    <strong>Price:</strong> ${{printf "%.2f" .Quote.USD.Price}}
+                </li>
+                {{end}}
+            </ul>
+            Price of the first coin in the list from coingecko API: ${{printf "%.2f" .PriceOfCoinOtherApi}}
+        </div>
+        <div id="stats">
+            <h3>Stats</h3>
+            <br>
+            <strong>Average Price:</strong> ${{printf "%.2f" .Average}}
+            <br>
+            <strong>Max Price:</strong> ${{printf "%.2f" .Max}}
+            <br>
+            <strong>Min Price:</strong> ${{printf "%.2f" .Min}}
+            <br>
+            <strong>Median Price:</strong> ${{printf "%.2f" .Median}}
+            <br>
+            <strong>Standard Deviation:</strong> ${{printf "%.2f" .StandardDeviation}}
+        </div>
+        <div>
+            <a href="/">Back</a>
+        </div>
+    </div>
+</body>
+</html>

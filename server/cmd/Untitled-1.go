@@ -1,42 +1,115 @@
-package main
 
-import (
-	"encoding/json"
-	"html/template"
-	"log"
-	"math"
-	"net/http"
-	"server/types"
-	"sort"
-	"strings"
-	// "app/async"
-)
+func homeHandler(rw http.ResponseWriter, r *http.Request) {
+	tmpl := template.Must(template.ParseFiles("html/index.html"))
+	var data interface{} = nil
 
-func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", homeHandler)
-	mux.HandleFunc("/api/get-listings", handleApiRequest)
-	http.ListenAndServe(":8080", mux)
+	err := tmpl.Execute(rw, data)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func handleAuthRequest(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("Auth request received"))
 }
 
 func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 
-	responseData, err := createCoinMarketCapRequest(w, r, client)
+	req, err := createCoinMarketCapRequest(r)
+	if err != nil {
+		log.Print(err)
+		http.Error(w, "Error creating request", http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Print("Error sending request to server: ", err)
+		http.Error(w, "Error sending request to server", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Received non-OK status code 1: %d", resp.StatusCode)
+		http.Error(w, "Recieved status code 1:", resp.StatusCode)
+		return
+	}
+
+	var responseData types.Response
+	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
+		log.Print("Error decoding JSON response: ", err)
+		http.Error(w, "Error decoding JSON response", http.StatusInternalServerError)
+		return
+	}
 
 	nameToCheckInOtherApi := responseData.Data[0].Name
 
-	responseData2, err := createCoinGeckoRequest(w, client)
+	req2, err := createCoinGeckoRequest()
+	if err != nil {
+		log.Print(err)
+		http.Error(w, "Error creating request", http.StatusInternalServerError)
+		return
+	}
+
+	resp2, err := client.Do(req2)
+	if err != nil {
+		log.Print(err)
+		http.Error(w, "Error sending request to server", http.StatusInternalServerError)
+		return
+	}
+
+	if resp2.StatusCode != http.StatusOK {
+		log.Printf("Received non-OK status code 2: %d", resp2.StatusCode)
+		http.Error(w, "Recieved status code 2:", resp2.StatusCode)
+		return
+	}
+
+	var responseData2 []types.Coin
+	if err := json.NewDecoder(resp2.Body).Decode(&responseData2); err != nil {
+		log.Print("Error decoding JSON response: ", err)
+		http.Error(w, "Error decoding JSON response", http.StatusInternalServerError)
+		return
+	}
 
 	nameToCheckInOtherApi = findCoinID(responseData2, nameToCheckInOtherApi)
 
-	priceOfCoinOtherApi := createCoinGeckoPriceRequest(w, nameToCheckInOtherApi, client)
+	req3, err := createCoinGeckoPriceRequest(nameToCheckInOtherApi)
+	if err != nil {
+		log.Print(err)
+		http.Error(w, "Error creating request", http.StatusInternalServerError)
+		return
+	}
+
+	resp3, err := client.Do(req3)
+	if err != nil {
+		log.Print(err)
+		http.Error(w, "Error sending request to server", http.StatusInternalServerError)
+		return
+	}
+	defer resp3.Body.Close()
+
+	if resp3.StatusCode != http.StatusOK {
+		log.Printf("Received non-OK status code 3: %d", resp3.StatusCode)
+		http.Error(w, "Recieved status code 3:", resp3.StatusCode)
+		return
+	}
+
+	var responseData3 map[string]map[string]float64
+	if err := json.NewDecoder(resp3.Body).Decode(&responseData3); err != nil {
+		log.Print("Error decoding JSON response: ", err)
+		http.Error(w, "Error decoding JSON response", http.StatusInternalServerError)
+		return
+	}
+
+	priceOfCoinOtherApi := responseData3[nameToCheckInOtherApi]["usd"]
 
 	average := CalculateAverage(responseData)
 	median := CalculateMedian(responseData)
 	standardDeviation := CalculateStandardDeviation(responseData)
 
-	tmpl := template.Must(template.ParseFiles("html/results.html"))
+	tmpl := template.Must(template.ParseFiles("html/index.html"))
 
 	templateData := types.ResponseToHttp{
 		Response:            responseData,
@@ -57,13 +130,13 @@ func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func createCoinMarketCapRequest(w http.ResponseWriter, r *http.Request, client *http.Client) (types.Response, error) {
+func createCoinMarketCapRequest(r *http.Request) (*http.Request, error) {
 	limit := r.FormValue("limit")
 	order := r.FormValue("order")
 
 	req, err := http.NewRequest("GET", "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest", nil)
 	if err != nil {
-		return types.Response{}, err
+		return nil, err
 	}
 
 	q := req.URL.Query()
@@ -74,101 +147,29 @@ func createCoinMarketCapRequest(w http.ResponseWriter, r *http.Request, client *
 	req.Header.Set("Accepts", "application/json")
 	req.Header.Add("X-CMC_PRO_API_KEY", "713a6b7d-6e93-4d59-88ea-038f57de2ae6")
 
-	if err != nil {
-		log.Print(err)
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return types.Response{}, err
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Print("Error sending request to server: ", err)
-		http.Error(w, "Error sending request to server", http.StatusInternalServerError)
-		return types.Response{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Received non-OK status code 1: %d", resp.StatusCode)
-		http.Error(w, "Recieved status code 1:", resp.StatusCode)
-		return types.Response{}, err
-	}
-
-	var responseData types.Response
-	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		log.Print("Error decoding JSON response: ", err)
-		http.Error(w, "Error decoding JSON response", http.StatusInternalServerError)
-		return types.Response{}, err
-	}
-
-	return responseData, nil
+	return req, nil
 }
 
-func createCoinGeckoRequest(w http.ResponseWriter, client *http.Client) ([]types.Coin, error) {
-	req2, err := http.NewRequest("GET", "https://api.coingecko.com/api/v3/coins/list", nil)
+func createCoinGeckoRequest() (*http.Request, error) {
+	req, err := http.NewRequest("GET", "https://api.coingecko.com/api/v3/coins/list", nil)
 	if err != nil {
-		log.Print(err)
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return []types.Coin{}, err
+		return nil, err
 	}
 
-	req2.Header.Add("x-cg-demo-api-key", "CG-x46kYuMHifPvVb46Qxj8WnRs")
+	req.Header.Add("x-cg-demo-api-key", "CG-x46kYuMHifPvVb46Qxj8WnRs")
 
-	resp2, err := client.Do(req2)
-	if err != nil {
-		log.Print(err)
-		http.Error(w, "Error sending request to server", http.StatusInternalServerError)
-		return []types.Coin{}, err
-	}
-
-	if resp2.StatusCode != http.StatusOK {
-		log.Printf("Received non-OK status code 2: %d", resp2.StatusCode)
-		http.Error(w, "Recieved status code 2:", resp2.StatusCode)
-		return []types.Coin{}, err
-	}
-
-	var responseData2 []types.Coin
-	if err := json.NewDecoder(resp2.Body).Decode(&responseData2); err != nil {
-		log.Print("Error decoding JSON response: ", err)
-		http.Error(w, "Error decoding JSON response", http.StatusInternalServerError)
-		return []types.Coin{}, err
-	}
-
-	return responseData2, nil
+	return req, nil
 }
 
-func createCoinGeckoPriceRequest(w http.ResponseWriter, coinID string, client *http.Client) float64 {
-	req3, err := http.NewRequest("GET", "https://api.coingecko.com/api/v3/simple/price?ids="+coinID+"&vs_currencies=usd", nil)
+func createCoinGeckoPriceRequest(coinID string) (*http.Request, error) {
+	req, err := http.NewRequest("GET", "https://api.coingecko.com/api/v3/simple/price?ids="+coinID+"&vs_currencies=usd", nil)
 	if err != nil {
-		log.Print(err)
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return 0
+		return nil, err
 	}
 
-	req3.Header.Add("x-cg-demo-api-key", "CG-x46kYuMHifPvVb46Qxj8WnRs")
+	req.Header.Add("x-cg-demo-api-key", "CG-x46kYuMHifPvVb46Qxj8WnRs")
 
-	resp3, err := client.Do(req3)
-	if err != nil {
-		log.Print(err)
-		http.Error(w, "Error sending request to server", http.StatusInternalServerError)
-		return 0
-	}
-	defer resp3.Body.Close()
-
-	if resp3.StatusCode != http.StatusOK {
-		log.Printf("Received non-OK status code 3: %d", resp3.StatusCode)
-		http.Error(w, "Recieved status code 3:", resp3.StatusCode)
-		return 0
-	}
-
-	var responseData3 map[string]map[string]float64
-	if err := json.NewDecoder(resp3.Body).Decode(&responseData3); err != nil {
-		log.Print("Error decoding JSON response: ", err)
-		http.Error(w, "Error decoding JSON response", http.StatusInternalServerError)
-		return 0
-	}
-
-	return responseData3[coinID]["usd"]
+	return req, nil
 }
 
 func findCoinID(coins []types.Coin, nameToCheckInOtherApi string) string {
@@ -234,16 +235,3 @@ func CalculateMin(listings types.Response) float64 {
 	return min
 }
 
-func homeHandler(rw http.ResponseWriter, r *http.Request) {
-	tmpl := template.Must(template.ParseFiles("html/index.html"))
-	var data interface{} = nil
-
-	err := tmpl.Execute(rw, data)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func handleAuthRequest(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Auth request received"))
-}
