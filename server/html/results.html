@@ -5,37 +5,86 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link rel="stylesheet" href="style.css">
         <title>Cryptocurrency!</title>
+
+        <style>
+        #container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 70vh;
+            color: white;
+        }
+
+        #output {
+            width: 700px;
+            border-radius: 5px;
+            border: 1px solid #000;
+            padding: 100px;
+            background-color: rgb(226, 88, 88);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+        }
+
+        #results {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-around;
+            border-radius: 5px;
+            border: 1px solid #000;
+            padding: 50px;
+            background-color: rgb(226, 171, 88);
+            margin: 10px;
+        }
+
+        #form-option {
+            margin: 10px;
+            padding: 10px;
+            width: 200px;
+            border-radius: 5px;
+            border: 1px solid #000;
+        }
+
+        #li {
+            margin: 5px;
+        }
+        </style>
     </head>
 <body>
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-        <h1>Welcome to cryptosummary</h1>
-        <div id="results">
-            <ul style="list-style-type: none;">
-                {{range .Response.Data}}
-                <li>
-                    <strong>Name:</strong> {{.Name}}, 
-                    <strong>Symbol:</strong> {{.Symbol}}, 
-                    <strong>Price:</strong> ${{printf "%.2f" .Quote.USD.Price}}
-                </li>
-                {{end}}
-            </ul>
-            Price of the first coin in the list from coingecko API: ${{printf "%.2f" .PriceOfCoinOtherApi}}
-        </div>
-        <div id="stats">
-            <h3>Stats</h3>
-            <br>
-            <strong>Average Price:</strong> ${{printf "%.2f" .Average}}
-            <br>
-            <strong>Max Price:</strong> ${{printf "%.2f" .Max}}
-            <br>
-            <strong>Min Price:</strong> ${{printf "%.2f" .Min}}
-            <br>
-            <strong>Median Price:</strong> ${{printf "%.2f" .Median}}
-            <br>
-            <strong>Standard Deviation:</strong> ${{printf "%.2f" .StandardDeviation}}
-        </div>
-        <div>
-            <a href="/">Back</a>
+    <div id="container">
+        <div id="output">
+            <h1>Cryptosummary</h1>
+            <div id="results">
+                <ol>
+                    {{range .Response.Data}}
+                    <li id="li">
+                        <strong>Name:</strong> {{.Name}}, 
+                        <strong>Symbol:</strong> {{.Symbol}}, 
+                        <strong>Price:</strong> ${{printf "%.2f" .Quote.USD.Price}}
+                    </li>
+                    {{end}}
+                </ol>
+            </div>
+            <div id="results">
+                <h3>Stats</h3>
+                <br>
+                Price of the first coin in the list from coingecko API: ${{printf "%.2f" .PriceOfCoinOtherApi}}
+                <br>
+                <strong>Average Price:</strong> ${{printf "%.2f" .Average}}
+                <br>
+                <strong>Max Price:</strong> ${{printf "%.2f" .Max}}
+                <br>
+                <strong>Min Price:</strong> ${{printf "%.2f" .Min}}
+                <br>
+                <strong>Median Price:</strong> ${{printf "%.2f" .Median}}
+                <br>
+                <strong>Standard Deviation:</strong> ${{printf "%.2f" .StandardDeviation}}
+            </div>
+            <div>
+                <a href="/">Back</a>
+            </div>
         </div>
     </div>
 </body>
