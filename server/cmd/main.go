@@ -9,7 +9,6 @@ import (
 	"server/types"
 	"sort"
 	"strings"
-	// "app/async"
 )
 
 func main() {
@@ -69,9 +68,28 @@ func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 	priceOfCoinOtherApi := <-priceOfCoinOtherApiCh
 	responseData := <-responseDataCh
 
-	average := CalculateAverage(responseData)
-	median := CalculateMedian(responseData)
-	standardDeviation := CalculateStandardDeviation(responseData)
+	averageCh := make(chan float64)
+	medianCh := make(chan float64)
+	standardDeviationCh := make(chan float64)
+
+	go func() {
+		average := CalculateAverage(responseData)
+		averageCh <- average
+	}()
+
+	go func() {
+		median := CalculateMedian(responseData)
+		medianCh <- median
+	}()
+
+	go func() {
+		standardDeviation := CalculateStandardDeviation(responseData)
+		standardDeviationCh <- standardDeviation
+	}()
+
+	average := <-averageCh
+	median := <-medianCh
+	standardDeviation := <-standardDeviationCh
 
 	tmpl := template.Must(template.ParseFiles("html/results.html"))
 
