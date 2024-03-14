@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"server/types"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,16 +25,13 @@ func main() {
 
 type ClientInfo struct {
 	Limiter *rate.Limiter
-	// You can add other client-specific data here
 }
 
 var (
-	// Create a mutex to synchronize access to the clients map
 	mu      sync.Mutex
-	clients = make(map[string]*ClientInfo) // Map to store rate limiters for each client's IP address
+	clients = make(map[string]*ClientInfo)
 )
 
-// Function to get or create a rate limiter for a client's IP address
 func getOrCreateLimiter(ip string) *rate.Limiter {
 	mu.Lock()
 	defer mu.Unlock()
@@ -42,7 +40,7 @@ func getOrCreateLimiter(ip string) *rate.Limiter {
 	info, ok := clients[ip]
 	if !ok {
 		// If not, create a new limiter and add it to the map
-		limiter := rate.NewLimiter(rate.Every(time.Second), 10) // Example: Limit to 10 requests per second per client
+		limiter := rate.NewLimiter(rate.Every(time.Second), 10)
 		info = &ClientInfo{Limiter: limiter}
 		clients[ip] = info
 	}
@@ -58,12 +56,9 @@ func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// limiting
 	ip := r.RemoteAddr
-
-	// Get or create a rate limiter for the client's IP address
 	limiter := getOrCreateLimiter(ip)
-
-	// Check if the client has exceeded the rate limit
 	if !limiter.Allow() {
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
@@ -71,7 +66,7 @@ func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 
 	responseDataCh := make(chan types.Response)
 	responseDataCh2 := make(chan []types.Coin)
-	priceOfCoinOtherApiCh := make(chan float64)
+	priceOfCoinOtherApiCh := make(chan string)
 	errorCh := make(chan error)
 
 	go func() {
@@ -264,12 +259,12 @@ func createCoinGeckoRequest(w http.ResponseWriter, client *http.Client) ([]types
 	return responseData2, nil
 }
 
-func createCoinGeckoPriceRequest(w http.ResponseWriter, coinID string, client *http.Client) float64 {
+func createCoinGeckoPriceRequest(w http.ResponseWriter, coinID string, client *http.Client) string {
 	req3, err := http.NewRequest("GET", "https://api.coingecko.com/api/v3/simple/price?ids="+coinID+"&vs_currencies=usd", nil)
 	if err != nil {
 		log.Print(err)
 		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return 0
+		return "NaN"
 	}
 
 	req3.Header.Add("x-cg-demo-api-key", "CG-x46kYuMHifPvVb46Qxj8WnRs")
@@ -278,24 +273,32 @@ func createCoinGeckoPriceRequest(w http.ResponseWriter, coinID string, client *h
 	if err != nil {
 		log.Print(err)
 		http.Error(w, "Error sending request to server", http.StatusInternalServerError)
-		return 0
+		return "NaN"
 	}
 	defer resp3.Body.Close()
 
 	if resp3.StatusCode != http.StatusOK {
 		log.Printf("Received non-OK status code while sending request to coingecko: %d", resp3.StatusCode)
 		http.Error(w, "Recieved status code from coingecko:", resp3.StatusCode)
-		return 0
+		return "NaN"
 	}
 
 	var responseData3 map[string]map[string]float64
 	if err := json.NewDecoder(resp3.Body).Decode(&responseData3); err != nil {
 		log.Print("Error decoding JSON response: ", err)
 		http.Error(w, "Error decoding JSON response", http.StatusInternalServerError)
-		return 0
+		return "NaN"
 	}
 
-	return responseData3[coinID]["usd"]
+	result := strconv.FormatFloat(responseData3[coinID]["usd"], 'f', 2, 64)
+
+	if result == "0" {
+		result = "NaN"
+	} else {
+		result = "$" + result
+	}
+
+	return result
 }
 
 func findCoinID(coins []types.Coin, nameToCheckInOtherApi string) string {

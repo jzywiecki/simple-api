@@ -7,7 +7,7 @@ type ResponseToHttp struct {
 	StandardDeviation   float64  `json:"standard_deviation"`
 	Max                 float64  `json:"max"`
 	Min                 float64  `json:"min"`
-	PriceOfCoinOtherApi float64  `json:"price_of_coin_other_api"`
+	PriceOfCoinOtherApi string   `json:"price_of_coin_other_api"`
 }
 
 type Response struct {
