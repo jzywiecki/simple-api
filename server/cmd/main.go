@@ -9,6 +9,10 @@ import (
 	"server/types"
 	"sort"
 	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -18,11 +22,50 @@ func main() {
 	http.ListenAndServe(":8080", mux)
 }
 
+type ClientInfo struct {
+	Limiter *rate.Limiter
+	// You can add other client-specific data here
+}
+
+var (
+	// Create a mutex to synchronize access to the clients map
+	mu      sync.Mutex
+	clients = make(map[string]*ClientInfo) // Map to store rate limiters for each client's IP address
+)
+
+// Function to get or create a rate limiter for a client's IP address
+func getOrCreateLimiter(ip string) *rate.Limiter {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Check if a limiter already exists for the client's IP address
+	info, ok := clients[ip]
+	if !ok {
+		// If not, create a new limiter and add it to the map
+		limiter := rate.NewLimiter(rate.Every(time.Second), 10) // Example: Limit to 10 requests per second per client
+		info = &ClientInfo{Limiter: limiter}
+		clients[ip] = info
+	}
+
+	return info.Limiter
+}
+
 func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 
 	if r.FormValue("api-key") != "123" {
 		http.Error(w, "Invalid API key", http.StatusUnauthorized)
+		return
+	}
+
+	ip := r.RemoteAddr
+
+	// Get or create a rate limiter for the client's IP address
+	limiter := getOrCreateLimiter(ip)
+
+	// Check if the client has exceeded the rate limit
+	if !limiter.Allow() {
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
 
@@ -117,8 +160,33 @@ func createCoinMarketCapRequest(w http.ResponseWriter, r *http.Request, client *
 	limit := r.FormValue("limit")
 	order := r.FormValue("order")
 
+	// if limit is lower or equal to 0 return error
+	if limit <= "0" {
+		http.Error(w, "Limit must be greater than 0", http.StatusBadRequest)
+		return types.Response{}, nil
+	}
+
+	// if order is not in options return error
+	options := []string{
+		"market_cap",
+		"volume_24h",
+		"percent_change_1h",
+		"percent_change_24h",
+		"percent_change_7d",
+		"price",
+		"name",
+		"symbol",
+	}
+
+	if !contains(options, order) {
+		http.Error(w, "Order must be one of: market_cap, volume_24h, percent_change_1h, percent_change_24h, percent_change_7d, price, name, symbol", http.StatusBadRequest)
+		return types.Response{}, nil
+	}
+
 	req, err := http.NewRequest("GET", "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest", nil)
 	if err != nil {
+		log.Print(err)
+		http.Error(w, "Error creating request to coingecko", http.StatusInternalServerError)
 		return types.Response{}, err
 	}
 
@@ -139,8 +207,8 @@ func createCoinMarketCapRequest(w http.ResponseWriter, r *http.Request, client *
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Received non-OK status code 1: %d", resp.StatusCode)
-		http.Error(w, "Recieved status code 1:", resp.StatusCode)
+		log.Printf("Received non-OK status code while sending request to coinmarketcap: %d", resp.StatusCode)
+		http.Error(w, "Recieved status code from coinmarketcap:", resp.StatusCode)
 		return types.Response{}, err
 	}
 
@@ -154,11 +222,20 @@ func createCoinMarketCapRequest(w http.ResponseWriter, r *http.Request, client *
 	return responseData, nil
 }
 
+func contains(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
 func createCoinGeckoRequest(w http.ResponseWriter, client *http.Client) ([]types.Coin, error) {
 	req2, err := http.NewRequest("GET", "https://api.coingecko.com/api/v3/coins/list", nil)
 	if err != nil {
 		log.Print(err)
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
+		http.Error(w, "Error creating request to coingecko", http.StatusInternalServerError)
 		return []types.Coin{}, err
 	}
 
@@ -166,14 +243,14 @@ func createCoinGeckoRequest(w http.ResponseWriter, client *http.Client) ([]types
 
 	resp2, err := client.Do(req2)
 	if err != nil {
-		log.Print(err)
-		http.Error(w, "Error sending request to server", http.StatusInternalServerError)
+		log.Print("Error sending request to server: ", err)
+		http.Error(w, "Error sending request to server:", http.StatusInternalServerError)
 		return []types.Coin{}, err
 	}
 
 	if resp2.StatusCode != http.StatusOK {
-		log.Printf("Received non-OK status code 2: %d", resp2.StatusCode)
-		http.Error(w, "Recieved status code 2:", resp2.StatusCode)
+		log.Printf("Received non-OK status code while sending request to coingecko: %d", resp2.StatusCode)
+		http.Error(w, "Recieved status code from coinmarketcap:", resp2.StatusCode)
 		return []types.Coin{}, err
 	}
 
@@ -206,8 +283,8 @@ func createCoinGeckoPriceRequest(w http.ResponseWriter, coinID string, client *h
 	defer resp3.Body.Close()
 
 	if resp3.StatusCode != http.StatusOK {
-		log.Printf("Received non-OK status code 3: %d", resp3.StatusCode)
-		http.Error(w, "Recieved status code 3:", resp3.StatusCode)
+		log.Printf("Received non-OK status code while sending request to coingecko: %d", resp3.StatusCode)
+		http.Error(w, "Recieved status code from coingecko:", resp3.StatusCode)
 		return 0
 	}
 
