@@ -1,3 +1,0 @@
-
-build:
-	GOOS=${GOOS} go build -o bin/ ./...
