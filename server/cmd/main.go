@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"math"
 	"net/http"
+	templates "server/html"
 	"server/types"
 	"sort"
 	"strconv"
@@ -21,6 +23,7 @@ func main() {
 	mux.HandleFunc("/", homeHandler)
 	mux.HandleFunc("/api/get-listings", handleApiRequest)
 	http.ListenAndServe(":8080", mux)
+	fmt.Println("Server is running on port 8080")
 }
 
 type ClientInfo struct {
@@ -129,7 +132,13 @@ func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 	median := <-medianCh
 	standardDeviation := <-standardDeviationCh
 
-	tmpl := template.Must(template.ParseFiles("html/results.html"))
+	tmpl, err := template.New("").Parse(templates.Results)
+
+	if err != nil {
+		log.Println("Error parsing template:", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	templateData := types.ResponseToHttp{
 		Response:            responseData,
@@ -141,7 +150,7 @@ func handleApiRequest(w http.ResponseWriter, r *http.Request) {
 		PriceOfCoinOtherApi: priceOfCoinOtherApi,
 	}
 
-	err := tmpl.Execute(w, templateData)
+	err = tmpl.Execute(w, templateData)
 
 	if err != nil {
 		log.Println("Error executing template:", err)
@@ -292,8 +301,8 @@ func createCoinGeckoPriceRequest(w http.ResponseWriter, coinID string, client *h
 
 	result := strconv.FormatFloat(responseData3[coinID]["usd"], 'f', 2, 64)
 
-	if result == "0" {
-		result = "NaN"
+	if result == "0.00" {
+		result = "Coin is not listed in other api"
 	} else {
 		result = "$" + result
 	}
@@ -365,10 +374,15 @@ func CalculateMin(listings types.Response) float64 {
 }
 
 func homeHandler(rw http.ResponseWriter, r *http.Request) {
-	tmpl := template.Must(template.ParseFiles("html/index.html"))
+	tmpl, err := template.New("").Parse(templates.Index)
+
+	if err != nil {
+		panic(err)
+	}
+
 	var data interface{} = nil
 
-	err := tmpl.Execute(rw, data)
+	err = tmpl.Execute(rw, data)
 	if err != nil {
 		panic(err)
 	}
