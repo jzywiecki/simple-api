@@ -1,0 +1,214 @@
+{
+	"info": {
+		"_postman_id": "d2fc8cdc-0827-439e-9897-ca6cbcccbd43",
+		"name": "Crypto",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "29248666"
+	},
+	"item": [
+		{
+			"name": "Main menu",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "localhost:8080/",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Without api key - 401",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "localhost:8080/api/get-listings",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"get-listings"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Good request",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "localhost:8080/api/get-listings?api-key=123&limit=3&order=name",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"get-listings"
+					],
+					"query": [
+						{
+							"key": "api-key",
+							"value": "123"
+						},
+						{
+							"key": "limit",
+							"value": "3"
+						},
+						{
+							"key": "order",
+							"value": "name"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Bad request - limit lower than 0",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "localhost:8080/api/get-listings?api-key=123&limit=-10&order=name",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"get-listings"
+					],
+					"query": [
+						{
+							"key": "api-key",
+							"value": "123"
+						},
+						{
+							"key": "limit",
+							"value": "-10"
+						},
+						{
+							"key": "order",
+							"value": "name"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Bad request - limit empty",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "localhost:8080/api/get-listings?api-key=123&order=name",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"get-listings"
+					],
+					"query": [
+						{
+							"key": "api-key",
+							"value": "123"
+						},
+						{
+							"key": "limit",
+							"value": "",
+							"disabled": true
+						},
+						{
+							"key": "order",
+							"value": "name"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Bad request - order not set",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "localhost:8080/api/get-listings?api-key=123&limit=10",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"get-listings"
+					],
+					"query": [
+						{
+							"key": "api-key",
+							"value": "123"
+						},
+						{
+							"key": "limit",
+							"value": "10"
+						},
+						{
+							"key": "order",
+							"value": "name",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Bad request - order misspelled",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "localhost:8080/api/get-listings?api-key=123&limit=5&order=nama",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"get-listings"
+					],
+					"query": [
+						{
+							"key": "api-key",
+							"value": "123"
+						},
+						{
+							"key": "limit",
+							"value": "5"
+						},
+						{
+							"key": "order",
+							"value": "nama"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
